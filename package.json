@@ -1,0 +1,16 @@
+{
+  "name": "dashboard-financeiro",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Dashboard comercial e financeiro da Scale Company (Asaas, InfinitePay, Inter, Sicoob, Cresol)",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

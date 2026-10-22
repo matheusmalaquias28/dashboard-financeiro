@@ -1,0 +1,26 @@
+import type { SourceData, Window } from '../types.js';
+import { addMonths, endOfMonth, startOfMonth, today, TtlCache } from '../util.js';
+import { asaas } from './asaas.js';
+import { infinitepay } from './infinitepay.js';
+import { inter } from './inter.js';
+import { cresol, sicoob } from './pending.js';
+
+/** A ordem aqui define a ordem (e a cor) de cada fonte no painel */
+export const connectors = [asaas, infinitepay, inter, sicoob, cresol];
+
+const cache = new TtlCache<SourceData[]>(2 * 60_000);
+
+/** Janela fixa: 12 meses para trás (histórico) até o fim do mês seguinte (projeção) */
+export function dataWindow(): Window {
+  const now = today();
+  return { from: startOfMonth(addMonths(now, -12)), to: endOfMonth(addMonths(now, 1)) };
+}
+
+export function loadAll(): Promise<SourceData[]> {
+  const window = dataWindow();
+  return cache.get(`${window.from}:${window.to}`, () => Promise.all(connectors.map((c) => c.load(window))));
+}
+
+export function invalidate() {
+  cache.clear();
+}
