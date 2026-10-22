@@ -56,6 +56,9 @@ export interface DashboardData {
   generatedAt: string;
   today: string;
   window: { from: string; to: string };
+  /** sse = servidor próprio (conexão aberta); poll = Vercel (consulta periódica) */
+  liveMode: 'sse' | 'poll';
+  version: number;
   sources: SourceStatus[];
   transactions: Transaction[];
   subscriptions: Subscription[];

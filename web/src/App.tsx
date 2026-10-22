@@ -11,15 +11,42 @@ import { TransactionsTable } from './components/TransactionsTable';
 import {
   applyFilters, breakdown, computeKpis, computeProjection, cumulativeSeries, dailyFlow, internalOutflow, monthlySeries, receivables, ymOf,
 } from './lib/metrics';
-import { useDashboard } from './lib/useDashboard';
+import { LoginPage } from './components/LoginPage';
+import { api, useDashboard } from './lib/useDashboard';
 import type { DashboardData, Filters } from './types';
 
+type Session = { authenticated: boolean; required: boolean };
+
 export default function App() {
-  const { data, error, loading, live, freshIds, reload } = useDashboard();
+  const [session, setSession] = useState<Session | null>(null);
+
+  useEffect(() => {
+    api<Session>('/api/session')
+      .then(setSession)
+      .catch(() => setSession({ authenticated: false, required: true }));
+  }, []);
+
+  if (!session) return null;
+  if (!session.authenticated) return <LoginPage onSuccess={() => setSession({ authenticated: true, required: true })} />;
+
+  const logout = async () => {
+    await fetch('/api/logout', { method: 'POST' }).catch(() => undefined);
+    setSession({ authenticated: false, required: true });
+  };
+  return (
+    <Main
+      onUnauthorized={() => setSession({ authenticated: false, required: true })}
+      onLogout={session.required ? logout : undefined}
+    />
+  );
+}
+
+function Main({ onUnauthorized, onLogout }: { onUnauthorized: () => void; onLogout?: () => void }) {
+  const { data, error, loading, live, freshIds, reload } = useDashboard(onUnauthorized);
 
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-4 px-4 py-5 sm:px-6 lg:py-7">
-      <Header generatedAt={data?.generatedAt} loading={loading} live={live} onRefresh={reload} />
+      <Header generatedAt={data?.generatedAt} loading={loading} live={live} onRefresh={reload} onLogout={onLogout} />
       {error && (
         <div className="card flex items-center gap-2 border-[var(--critical)] px-4 py-3 text-[13px] text-critical-ink">
           <AlertTriangle size={16} /> {error}

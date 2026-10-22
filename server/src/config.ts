@@ -11,7 +11,7 @@ export const config = {
   // API_PORT tem prioridade: plataformas de hospedagem (e ferramentas de preview) definem PORT por conta própria
   port: Number(str('API_PORT') || str('PORT', '3001')),
   publicUrl: str('PUBLIC_URL', 'http://localhost:3001').replace(/\/$/, ''),
-  auth: { user: str('DASHBOARD_USER'), password: str('DASHBOARD_PASSWORD') },
+  auth: { password: str('DASHBOARD_PASSWORD') },
   demoMode: bool('DEMO_MODE', true),
 
   asaas: {
@@ -32,9 +32,18 @@ export const config = {
     clientSecret: str('INTER_CLIENT_SECRET'),
     certPath: str('INTER_CERT_PATH', './certs/inter.crt'),
     keyPath: str('INTER_KEY_PATH', './certs/inter.key'),
+    certBase64: str('INTER_CERT_BASE64'),
+    keyBase64: str('INTER_KEY_BASE64'),
     account: str('INTER_ACCOUNT'),
     baseUrl: 'https://cdpj.partners.bancointer.com.br',
   },
+
+  redis: {
+    url: str('UPSTASH_REDIS_REST_URL') || str('KV_REST_API_URL'),
+    token: str('UPSTASH_REDIS_REST_TOKEN') || str('KV_REST_API_TOKEN'),
+  },
+  /** Na Vercel não há conexão longa entre instâncias: o painel consulta /api/live periodicamente */
+  liveMode: process.env.VERCEL ? ('poll' as const) : ('sse' as const),
 
   sicoob: { clientId: str('SICOOB_CLIENT_ID') },
   cresol: { apiKey: str('CRESOL_API_KEY') },

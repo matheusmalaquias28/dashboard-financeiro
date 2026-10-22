@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { config } from '../config.js';
 import { invalidate } from '../connectors/index.js';
-import { recordWebhook, verifyPayment, type InfinitePayWebhook } from '../connectors/infinitepay.js';
+import { recordWebhook, store, verifyPayment, type InfinitePayWebhook } from '../connectors/infinitepay.js';
 import { broadcast } from '../events.js';
 
 export const webhooks = Router();
@@ -13,7 +13,7 @@ const safeEqual = (a: string, b: string) => a.length === b.length && crypto.timi
  * Asaas: cadastrar em Asaas > Integrações > Webhooks, com o mesmo token de ASAAS_WEBHOOK_TOKEN.
  * Eventos úteis: PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_OVERDUE, PAYMENT_CREATED, TRANSFER_DONE.
  */
-webhooks.post('/asaas', (req, res) => {
+webhooks.post('/asaas', async (req, res) => {
   const token = req.header('asaas-access-token') ?? '';
   if (!config.asaas.webhookToken || !safeEqual(token, config.asaas.webhookToken)) {
     res.status(401).json({ error: 'token inválido' });
@@ -21,6 +21,8 @@ webhooks.post('/asaas', (req, res) => {
   }
   const event = String(req.body?.event ?? '');
   invalidate();
+  // a versão compartilhada faz as outras instâncias (Vercel) descartarem o cache também
+  await store.bump().catch((err) => console.error('[asaas] falha ao sinalizar atualização', err));
   broadcast({ type: 'refresh', source: 'asaas', reason: event });
   res.json({ received: true });
 });
@@ -30,17 +32,20 @@ async function handleInfinitePay(body: InfinitePayWebhook, res: import('express'
     res.status(400).json({ error: 'payload inválido' });
     return;
   }
-  // Responde rápido (a InfinitePay pede < 1s); a confirmação roda em seguida
-  res.json({ received: true });
+  // Processa antes de responder: em funções serverless o trabalho após a resposta pode ser interrompido.
+  // 200 = recebido (inclusive quando ignorado); 400 = falha temporária, a InfinitePay tenta de novo.
   try {
     if (config.infinitepay.verifyWebhook && !(await verifyPayment(body))) {
       console.warn(`[infinitepay] webhook ${body.transaction_nsu} NÃO confirmado em payment_check – ignorado`);
+      res.json({ received: true, ignored: true });
       return;
     }
-    const { isNew } = recordWebhook(body);
+    const { isNew } = await recordWebhook(body);
     if (isNew) invalidate();
+    res.json({ received: true });
   } catch (err) {
     console.error('[infinitepay] erro ao processar webhook', err);
+    res.status(400).json({ error: 'falha temporária, tente novamente' });
   }
 }
 

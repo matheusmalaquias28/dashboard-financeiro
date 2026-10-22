@@ -1,9 +1,15 @@
 import clsx from 'clsx';
-import { Moon, RefreshCw, Sun } from 'lucide-react';
+import { LogOut, Moon, RefreshCw, Sun } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { LiveState } from '../lib/useDashboard';
 
-export function Header({ generatedAt, loading, live, onRefresh }: { generatedAt?: string; loading: boolean; live: LiveState; onRefresh: () => void }) {
+export function Header({ generatedAt, loading, live, onRefresh, onLogout }: {
+  generatedAt?: string;
+  loading: boolean;
+  live: LiveState;
+  onRefresh: () => void;
+  onLogout?: () => void;
+}) {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
@@ -55,6 +61,17 @@ export function Header({ generatedAt, loading, live, onRefresh }: { generatedAt?
         >
           {dark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
+        {onLogout && (
+          <button
+            type="button"
+            onClick={onLogout}
+            className="grid size-9 place-items-center rounded-lg border border-line bg-surface text-ink-2 hover:bg-surface-2"
+            aria-label="Sair"
+            title="Sair"
+          >
+            <LogOut size={16} />
+          </button>
+        )}
       </div>
     </header>
   );

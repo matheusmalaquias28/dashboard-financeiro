@@ -11,7 +11,7 @@
  */
 import { config } from '../config.js';
 import { broadcast } from '../events.js';
-import { JsonStore } from '../store.js';
+import { createStore } from '../store.js';
 import type { Connector, SourceData, Transaction, Window } from '../types.js';
 import { fetchJson, round2, today } from '../util.js';
 import { demoInfinitePay, demoLiveSale } from './demo.js';
@@ -29,11 +29,17 @@ export interface InfinitePayWebhook {
   items?: Array<{ description?: string; quantity?: number; price?: number }>;
 }
 
-const store = new JsonStore<Transaction>('infinitepay');
+export const store = createStore<Transaction>('infinitepay');
 const demoLive: Transaction[] = [];
 
-function usingDemo() {
-  return config.demoMode && store.all().length === 0;
+async function usingDemo() {
+  return config.demoMode && (await store.all()).length === 0;
+}
+
+/** Vendas que chegaram depois de `since` (ISO) – usado pelo painel no modo de consulta periódica */
+export async function salesSince(since: string): Promise<Transaction[]> {
+  const all = (await usingDemo()) ? demoLive : await store.all();
+  return all.filter((t) => (t.createdAt ?? '') > since);
 }
 
 export async function verifyPayment(p: InfinitePayWebhook): Promise<boolean> {
@@ -48,7 +54,7 @@ export async function verifyPayment(p: InfinitePayWebhook): Promise<boolean> {
   return res.paid === true;
 }
 
-export function recordWebhook(p: InfinitePayWebhook): { isNew: boolean; transaction: Transaction } {
+export async function recordWebhook(p: InfinitePayWebhook): Promise<{ isNew: boolean; transaction: Transaction }> {
   const paid = (p.paid_amount ?? p.amount) / 100;
   const transaction: Transaction = {
     id: `ip_${p.transaction_nsu}`,
@@ -66,15 +72,18 @@ export function recordWebhook(p: InfinitePayWebhook): { isNew: boolean; transact
     createdAt: new Date().toISOString(),
   };
   if (paid > transaction.amount) transaction.description += ` (pago R$ ${paid.toFixed(2)} c/ juros)`;
-  const isNew = store.upsert(transaction);
-  if (isNew) broadcast({ type: 'transaction', transaction });
+  const isNew = await store.insert(transaction);
+  if (isNew) {
+    await store.bump();
+    broadcast({ type: 'transaction', transaction });
+  }
   return { isNew, transaction };
 }
 
 /** No modo demonstração, simula uma venda a cada 30–90s para o feed ao vivo */
 export function startDemoTicker() {
-  const tick = () => {
-    if (usingDemo()) {
+  const tick = async () => {
+    if (await usingDemo().catch(() => false)) {
       const sale = demoLiveSale();
       demoLive.push(sale);
       broadcast({ type: 'transaction', transaction: sale });
@@ -100,7 +109,18 @@ export const infinitepay: Connector = {
     };
     const inWindow = (t: Transaction) => !!t.paidDate && t.paidDate >= window.from && t.paidDate <= window.to;
 
-    if (usingDemo()) {
+    let stored: Transaction[];
+    try {
+      stored = await store.all();
+    } catch (err) {
+      return {
+        status: { ...base, state: 'error', message: `Falha ao ler as vendas salvas: ${(err as Error).message}` },
+        transactions: [],
+        subscriptions: [],
+      };
+    }
+
+    if (config.demoMode && stored.length === 0) {
       return {
         status: {
           ...base, state: 'demo', message: 'Nenhuma venda recebida via webhook ainda – exibindo demonstração',
@@ -115,8 +135,8 @@ export const infinitepay: Connector = {
       };
     }
 
-    const transactions = store.all().filter(inWindow);
-    const last = store.all().reduce<string | undefined>((acc, t) => (!acc || (t.createdAt ?? '') > acc ? t.createdAt : acc), undefined);
+    const transactions = stored.filter(inWindow);
+    const last = stored.reduce<string | undefined>((acc, t) => (!acc || (t.createdAt ?? '') > acc ? t.createdAt : acc), undefined);
     return {
       status: {
         ...base, state: 'connected',

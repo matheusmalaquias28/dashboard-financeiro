@@ -29,8 +29,11 @@ let token: { value: string; expiresAt: number } | null = null;
 
 function mtls(): Agent {
   if (dispatcher) return dispatcher;
-  const read = (p: string) => fs.readFileSync(path.resolve(ROOT_DIR, p));
-  dispatcher = new Agent({ connect: { cert: read(config.inter.certPath), key: read(config.inter.keyPath) } });
+  // Em hospedagens sem disco (Vercel) o certificado vem das variáveis INTER_CERT_BASE64 / INTER_KEY_BASE64
+  const load = (b64: string, p: string) => (b64 ? Buffer.from(b64, 'base64') : fs.readFileSync(path.resolve(ROOT_DIR, p)));
+  dispatcher = new Agent({
+    connect: { cert: load(config.inter.certBase64, config.inter.certPath), key: load(config.inter.keyBase64, config.inter.keyPath) },
+  });
   return dispatcher;
 }
 

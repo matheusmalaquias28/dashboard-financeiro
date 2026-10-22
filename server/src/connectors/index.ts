@@ -1,7 +1,7 @@
 import type { SourceData, Window } from '../types.js';
 import { addMonths, endOfMonth, startOfMonth, today, TtlCache } from '../util.js';
 import { asaas } from './asaas.js';
-import { infinitepay } from './infinitepay.js';
+import { infinitepay, store } from './infinitepay.js';
 import { inter } from './inter.js';
 import { cresol, sicoob } from './pending.js';
 
@@ -16,9 +16,11 @@ export function dataWindow(): Window {
   return { from: startOfMonth(addMonths(now, -12)), to: endOfMonth(addMonths(now, 1)) };
 }
 
-export function loadAll(): Promise<SourceData[]> {
+export async function loadAll(): Promise<SourceData[]> {
   const window = dataWindow();
-  return cache.get(`${window.from}:${window.to}`, () => Promise.all(connectors.map((c) => c.load(window))));
+  // a versão muda a cada webhook; com Redis isso vale para todas as instâncias
+  const version = await store.version().catch(() => 0);
+  return cache.get(`${window.from}:${window.to}:${version}`, () => Promise.all(connectors.map((c) => c.load(window))));
 }
 
 export function invalidate() {
