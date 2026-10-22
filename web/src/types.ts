@@ -64,9 +64,18 @@ export interface DashboardData {
   subscriptions: Subscription[];
 }
 
+export interface User {
+  id: string;
+  email: string;
+  role: 'admin' | 'seller';
+  name: string;
+}
+
+export type View = 'financeiro' | 'checkout' | 'colaboradores' | 'emails';
+
 export interface Filters {
-  /** YYYY-MM */
-  month: string;
+  /** período de análise (intervalo de datas) */
+  period: import('./lib/period').Period;
   sources: SourceId[];
   methods: PaymentMethod[];
 }

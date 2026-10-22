@@ -8,8 +8,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/webhooks': 'http://localhost:3001',
+      // API_URL permite apontar para outra instância da API em desenvolvimento.
+      // changeOrigin: false mantém o Host do navegador (localhost:5173), usado no retorno do login do Google.
+      '/api': { target: process.env.API_URL ?? 'http://localhost:3001', changeOrigin: false },
+      '/webhooks': { target: process.env.API_URL ?? 'http://localhost:3001', changeOrigin: false },
     },
   },
 });

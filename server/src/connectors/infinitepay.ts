@@ -54,7 +54,11 @@ export async function verifyPayment(p: InfinitePayWebhook): Promise<boolean> {
   return res.paid === true;
 }
 
-export async function recordWebhook(p: InfinitePayWebhook): Promise<{ isNew: boolean; transaction: Transaction }> {
+export async function recordWebhook(
+  p: InfinitePayWebhook,
+  /** dados da cobrança do checkout, quando a venda foi gerada pelo painel */
+  extra?: { customer: string; description: string },
+): Promise<{ isNew: boolean; transaction: Transaction }> {
   const paid = (p.paid_amount ?? p.amount) / 100;
   const transaction: Transaction = {
     id: `ip_${p.transaction_nsu}`,
@@ -66,8 +70,8 @@ export async function recordWebhook(p: InfinitePayWebhook): Promise<{ isNew: boo
     netAmount: undefined,
     paidDate: today(),
     installments: p.installments ?? 1,
-    description: p.items?.map((i) => i.description).filter(Boolean).join(', ') || 'Link de pagamento InfinitePay',
-    customer: p.order_nsu ? `Pedido ${p.order_nsu}` : undefined,
+    description: extra?.description ?? (p.items?.map((i) => i.description).filter(Boolean).join(', ') || 'Link de pagamento InfinitePay'),
+    customer: extra?.customer ?? (p.order_nsu ? `Pedido ${p.order_nsu}` : undefined),
     receiptUrl: p.receipt_url,
     createdAt: new Date().toISOString(),
   };

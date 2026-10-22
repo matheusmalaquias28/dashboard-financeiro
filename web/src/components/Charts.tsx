@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Area, Bar, BarChart, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { axisMoney, money, monthLabel, monthShort } from '../lib/format';
 import type { CumulativePoint, MonthlyPoint } from '../lib/metrics';
-import { shiftMonth } from '../lib/metrics';
+import { shortDate, type Period } from '../lib/period';
 import { ChartCard, DataTable, Swatch } from './ui';
 
 interface TipRow {
@@ -17,13 +17,13 @@ function Tip({ active, payload, title, rows }: { active?: boolean; payload?: Arr
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
-    <div className="min-w-[180px] rounded-xl border border-line bg-surface px-3 py-2.5 shadow-lg">
-      <div className="mb-1.5 text-[12px] text-muted">{title(p)}</div>
+    <div className="min-w-[190px] rounded-2xl border border-line-strong bg-surface-2 px-3.5 py-3 shadow-2xl shadow-black/40">
+      <div className="mb-2 text-[12px] font-semibold text-muted">{title(p)}</div>
       {rows.map((r) =>
         p[r.key] == null ? null : (
           <div key={r.key} className="flex items-center gap-2 py-0.5 text-[13px]">
             <Swatch color={r.color} shape={r.shape ?? 'line'} />
-            <span className="tabular font-semibold text-ink">{money(p[r.key] as number)}</span>
+            <span className="tabular font-bold text-ink">{money(p[r.key] as number)}</span>
             <span className="text-ink-2">{r.label}</span>
           </div>
         ),
@@ -34,59 +34,65 @@ function Tip({ active, payload, title, rows }: { active?: boolean; payload?: Arr
 
 const axisProps = {
   stroke: 'var(--axis)',
-  tick: { fill: 'var(--muted)', fontSize: 12 },
+  tick: { fill: 'var(--muted)', fontSize: 12, fontWeight: 500 },
   tickLine: false,
 } as const;
 
-export function CumulativeChart({ data, month }: { data: CumulativePoint[]; month: string }) {
-  const prev = shiftMonth(month, -1);
+export function CumulativeChart({ data, label }: { data: CumulativePoint[]; label: string }) {
   const last = [...data].reverse().find((d) => d.atual != null);
+  const single = data.length === 1;
   return (
     <ChartCard
-      title="Evolução dos recebimentos no mês"
+      title="Evolução dos recebimentos"
       subtitle={
         <span className="inline-flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="inline-flex items-center gap-1.5"><Swatch color="var(--series-in)" shape="line" /> {monthLabel(month)} (acumulado)</span>
-          <span className="inline-flex items-center gap-1.5"><Swatch color="var(--series-prev)" shape="line" /> {monthLabel(prev)}</span>
+          <span className="inline-flex items-center gap-1.5"><Swatch color="var(--series-in)" shape="line" /> {label} (acumulado)</span>
+          <span className="inline-flex items-center gap-1.5"><Swatch color="var(--series-prev)" shape="line" /> período anterior</span>
           <span className="inline-flex items-center gap-1.5"><Swatch color="var(--series-in)" /> recebido no dia</span>
         </span>
       }
       table={
         <DataTable
-          head={['Dia', 'No dia', 'Acumulado', `Acum. ${monthShort(prev)}`]}
-          rows={data.map((d) => [String(d.day).padStart(2, '0'), money(d.diario), d.atual == null ? '—' : money(d.atual), d.anterior == null ? '—' : money(d.anterior)])}
+          head={['Data', 'No dia', 'Acumulado', 'Acum. anterior']}
+          rows={data.map((d) => [shortDate(d.date), money(d.diario), d.atual == null ? '—' : money(d.atual), d.anterior == null ? '—' : money(d.anterior)])}
         />
       }
     >
       <div className="relative h-[280px]">
         {last?.atual != null && (
           <div className="pointer-events-none absolute right-2 top-0 z-10 text-right">
-            <div className="text-[12px] text-muted">até o dia {last.day}</div>
+            <div className="text-[12px] text-muted">até {shortDate(last.date)}</div>
             <div className="tabular text-[15px] font-semibold text-ink">{money(last.atual)}</div>
           </div>
         )}
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="grad-in" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--series-in)" stopOpacity={0.28} />
+                <stop offset="100%" stopColor="var(--series-in)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <CartesianGrid vertical={false} stroke="var(--grid)" />
-            <XAxis dataKey="day" {...axisProps} interval="preserveStartEnd" minTickGap={16} />
+            <XAxis dataKey="date" {...axisProps} tickFormatter={shortDate} interval="preserveStartEnd" minTickGap={24} />
             <YAxis {...axisProps} axisLine={false} tickFormatter={axisMoney} width={48} />
             <Tooltip
               cursor={{ stroke: 'var(--axis)', strokeWidth: 1 }}
               content={(props) => (
                 <Tip
                   {...(props as object)}
-                  title={(p) => `Dia ${p.day}`}
+                  title={(p) => `${shortDate(p.date as string)} · anterior: ${shortDate(p.prevDate as string)}`}
                   rows={[
                     { key: 'atual', label: 'acumulado', color: 'var(--series-in)' },
-                    { key: 'anterior', label: `acum. ${monthShort(prev)}`, color: 'var(--series-prev)' },
+                    { key: 'anterior', label: 'acum. anterior', color: 'var(--series-prev)' },
                     { key: 'diario', label: 'no dia', color: 'var(--series-in)', shape: 'rect' },
                   ]}
                 />
               )}
             />
-            <Bar dataKey="diario" fill="var(--series-in)" fillOpacity={0.28} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false} />
+            <Bar dataKey="diario" fill="var(--series-in)" fillOpacity={single ? 1 : 0.3} radius={[99, 99, 99, 99]} maxBarSize={single ? 28 : 10} isAnimationActive={false} />
             <Line dataKey="anterior" stroke="var(--series-prev)" strokeWidth={2} dot={false} activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} />
-            <Area dataKey="atual" stroke="var(--series-in)" strokeWidth={2} fill="var(--series-in)" fillOpacity={0.1} dot={false} activeDot={{ r: 5, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} connectNulls={false} />
+            <Area dataKey="atual" stroke="var(--series-in)" strokeWidth={2.5} fill="url(#grad-in)" dot={false} activeDot={{ r: 5, stroke: 'var(--surface)', strokeWidth: 2 }} isAnimationActive={false} connectNulls={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -94,7 +100,8 @@ export function CumulativeChart({ data, month }: { data: CumulativePoint[]; mont
   );
 }
 
-export function MonthlyFlowChart({ data, selected, onSelect }: { data: MonthlyPoint[]; selected: string; onSelect: (ym: string) => void }) {
+export function MonthlyFlowChart({ data, period, onSelect }: { data: MonthlyPoint[]; period: Period; onSelect: (ym: string) => void }) {
+  const inSelection = (ym: string) => ym >= period.from.slice(0, 7) && ym <= period.to.slice(0, 7);
   const [hover, setHover] = useState<string | null>(null);
   const totalIn = data.reduce((a, d) => a + d.entradas, 0);
   return (
@@ -119,7 +126,7 @@ export function MonthlyFlowChart({ data, selected, onSelect }: { data: MonthlyPo
           <BarChart
             data={data}
             margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
-            barGap={2}
+            barGap={4}
             barCategoryGap="22%"
             onClick={(s) => {
               const ym = (s as { activeLabel?: string })?.activeLabel;
@@ -146,11 +153,11 @@ export function MonthlyFlowChart({ data, selected, onSelect }: { data: MonthlyPo
                 />
               )}
             />
-            <Bar dataKey="entradas" fill="var(--series-in)" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}
-              shape={(props: unknown) => <FadedBar {...(props as BarShapeProps)} dim={(props as BarShapeProps).payload.ym !== selected && (props as BarShapeProps).payload.ym !== hover} />}
+            <Bar dataKey="entradas" fill="var(--series-in)" radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false}
+              shape={(props: unknown) => <FadedBar {...(props as BarShapeProps)} dim={!inSelection((props as BarShapeProps).payload.ym) && (props as BarShapeProps).payload.ym !== hover} />}
             />
-            <Bar dataKey="saidas" fill="var(--series-out)" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}
-              shape={(props: unknown) => <FadedBar {...(props as BarShapeProps)} dim={(props as BarShapeProps).payload.ym !== selected && (props as BarShapeProps).payload.ym !== hover} />}
+            <Bar dataKey="saidas" fill="var(--series-out)" radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false}
+              shape={(props: unknown) => <FadedBar {...(props as BarShapeProps)} dim={!inSelection((props as BarShapeProps).payload.ym) && (props as BarShapeProps).payload.ym !== hover} />}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -168,10 +175,9 @@ interface BarShapeProps {
   payload: MonthlyPoint;
 }
 
-/** Coluna com topo arredondado (4px) e base reta; meses fora de foco ficam esmaecidos */
+/** Coluna em pílula (cantos totalmente arredondados); meses fora de foco ficam esmaecidos */
 function FadedBar({ x, y, width, height, fill, dim }: BarShapeProps & { dim: boolean }) {
   if (!height || height <= 0) return null;
-  const r = Math.min(4, width / 2, height);
-  const d = `M${x},${y + height} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + width - r},${y} Q${x + width},${y} ${x + width},${y + r} L${x + width},${y + height} Z`;
-  return <path d={d} fill={fill} opacity={dim ? 0.45 : 1} />;
+  const h = Math.max(height, width);
+  return <rect x={x} y={y + height - h} width={width} height={h} rx={width / 2} fill={fill} opacity={dim ? 0.55 : 1} />;
 }

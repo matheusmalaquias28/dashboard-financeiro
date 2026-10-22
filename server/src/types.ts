@@ -87,5 +87,6 @@ export interface Window {
 
 export interface Connector {
   id: SourceId;
-  load(window: Window): Promise<SourceData>;
+  /** ctx.version muda a cada webhook: invalida os caches das partes que mudam com frequência */
+  load(window: Window, ctx?: { version: number }): Promise<SourceData>;
 }

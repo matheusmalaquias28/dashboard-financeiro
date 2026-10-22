@@ -6,7 +6,9 @@
       "framework": "express",
       "entrypoint": "src/index.ts",
       "functions": {
-        "src/index.ts": { "maxDuration": 300 }
+        "src/index.ts": {
+          "maxDuration": 300
+        }
       }
     },
     "web": {
@@ -16,8 +18,29 @@
     }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": { "service": "server" } },
-    { "source": "/webhooks/(.*)", "destination": { "service": "server" } },
-    { "source": "/(.*)", "destination": { "service": "web" } }
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "server"
+      }
+    },
+    {
+      "source": "/webhooks/(.*)",
+      "destination": {
+        "service": "server"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/gmail/cron",
+      "schedule": "0 11 * * *"
+    }
   ]
 }

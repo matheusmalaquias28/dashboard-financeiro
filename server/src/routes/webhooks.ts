@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
+import { markChargePaid } from '../checkout.js';
 import { config } from '../config.js';
 import { invalidate } from '../connectors/index.js';
 import { recordWebhook, store, verifyPayment, type InfinitePayWebhook } from '../connectors/infinitepay.js';
@@ -27,6 +28,16 @@ webhooks.post('/asaas', async (req, res) => {
   res.json({ received: true });
 });
 
+/** Pagamento já confirmado: baixa a cobrança do checkout (se for uma) e lança no painel financeiro */
+export async function processInfinitePayPayment(body: InfinitePayWebhook) {
+  const charge = await markChargePaid(body);
+  const { isNew } = await recordWebhook(
+    body,
+    charge && { customer: charge.customer.name, description: `${charge.items.map((i) => i.description).join(', ')} · vendedor: ${charge.seller}` },
+  );
+  if (isNew) invalidate();
+}
+
 async function handleInfinitePay(body: InfinitePayWebhook, res: import('express').Response) {
   if (!body?.transaction_nsu || typeof body.amount !== 'number') {
     res.status(400).json({ error: 'payload inválido' });
@@ -40,8 +51,7 @@ async function handleInfinitePay(body: InfinitePayWebhook, res: import('express'
       res.json({ received: true, ignored: true });
       return;
     }
-    const { isNew } = await recordWebhook(body);
-    if (isNew) invalidate();
+    await processInfinitePayPayment(body);
     res.json({ received: true });
   } catch (err) {
     console.error('[infinitepay] erro ao processar webhook', err);

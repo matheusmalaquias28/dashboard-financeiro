@@ -1,83 +1,128 @@
 import clsx from 'clsx';
-import { AlertTriangle, CheckCircle2, Clock, ExternalLink, Radio, XCircle } from 'lucide-react';
-import { fmtDate, METHOD_NAME, money, moneyCompact, monthLabel, percent, SOURCE_COLOR, SOURCE_NAME } from '../lib/format';
+import { AlertTriangle, ArrowLeftRight, Banknote, Building2, CalendarCheck, CheckCircle2, Clock, CreditCard, ExternalLink, Landmark, QrCode, Radio, Receipt, Repeat, ScanBarcode, Sparkles, Wallet, XCircle } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { fmtDate, METHOD_NAME, money, monthLabel, percent, SOURCE_COLOR, SOURCE_NAME } from '../lib/format';
 import type { Projection } from '../lib/metrics';
 import type { PaymentMethod, SourceId, SourceStatus, Transaction } from '../types';
+import { IconBubble, Segmented } from './controls';
 import { DemoBadge } from './Kpis';
 import { Card, StatusBadge, Swatch } from './ui';
 
-// ---------------------------------------------------------------- composição (barras horizontais)
-export function BreakdownCard({ bySource, byMethod, month }: {
-  bySource: Array<{ key: SourceId; value: number; count: number }>;
-  byMethod: Array<{ key: PaymentMethod; value: number; count: number }>;
-  month: string;
-}) {
-  const total = bySource.reduce((a, b) => a + b.value, 0);
+// ---------------------------------------------------------------- composição (barra segmentada + lista)
+const SOURCE_ICON: Record<SourceId, ReactNode> = {
+  asaas: <Repeat size={16} />,
+  infinitepay: <CreditCard size={16} />,
+  inter: <Landmark size={16} />,
+  sicoob: <Building2 size={16} />,
+  cresol: <Building2 size={16} />,
+};
+
+const METHOD_STYLE: Record<PaymentMethod, { color: string; icon: ReactNode }> = {
+  pix: { color: 'var(--series-4)', icon: <QrCode size={16} /> },
+  boleto: { color: 'var(--series-3)', icon: <ScanBarcode size={16} /> },
+  credit_card: { color: 'var(--series-1)', icon: <CreditCard size={16} /> },
+  debit_card: { color: 'var(--series-5)', icon: <Wallet size={16} /> },
+  transfer: { color: 'var(--series-2)', icon: <ArrowLeftRight size={16} /> },
+  fee: { color: 'var(--muted)', icon: <Receipt size={16} /> },
+  other: { color: 'var(--muted)', icon: <Banknote size={16} /> },
+};
+
+interface Row {
+  key: string;
+  label: string;
+  value: number;
+  count: number;
+  color: string;
+  icon: ReactNode;
+}
+
+/** Barra horizontal dividida em segmentos com respiro entre eles (parte de um todo) */
+export function SegmentBar({ rows, total }: { rows: Array<{ key: string; label: string; value: number; color: string }>; total: number }) {
+  if (!total) return <div className="h-3 rounded-full bg-surface-2" />;
   return (
-    <Card title="Composição dos recebimentos" subtitle={monthLabel(month)}>
-      <h3 className="mb-2 text-[12px] font-medium uppercase tracking-wide text-muted">Por fonte</h3>
-      <Bars rows={bySource.map((r) => ({ label: SOURCE_NAME[r.key], value: r.value, count: r.count, color: SOURCE_COLOR[r.key] }))} total={total} />
-      <h3 className="mb-2 mt-5 text-[12px] font-medium uppercase tracking-wide text-muted">Por forma de pagamento</h3>
-      {/* uma única série → uma única cor; as categorias não têm ordem natural */}
-      <Bars rows={byMethod.map((r) => ({ label: METHOD_NAME[r.key], value: r.value, count: r.count, color: 'var(--series-1)' }))} total={total} />
-    </Card>
+    <div className="flex h-3 w-full gap-1" role="img" aria-label={rows.map((r) => `${r.label} ${percent(r.value / total)}`).join(', ')}>
+      {rows.filter((r) => r.value > 0).map((r) => (
+        <div key={r.key} title={`${r.label}: ${money(r.value)}`} className="h-full min-w-[6px] rounded-full" style={{ width: `${(r.value / total) * 100}%`, background: r.color }} />
+      ))}
+    </div>
   );
 }
 
-function Bars({ rows, total }: { rows: Array<{ label: string; value: number; count: number; color: string }>; total: number }) {
-  if (!rows.length) return <p className="text-[13px] text-muted">Sem recebimentos no período.</p>;
-  const max = Math.max(...rows.map((r) => r.value));
+function CategoryList({ rows, total, noun }: { rows: Row[]; total: number; noun: string }) {
+  if (!rows.length) return <p className="py-4 text-[13px] text-muted">Sem recebimentos no período.</p>;
   return (
-    <ul className="flex flex-col gap-2.5">
+    <ul className="flex flex-col">
       {rows.map((r) => (
-        <li key={r.label} title={`${r.label}: ${money(r.value)} em ${r.count} pagamentos`}>
-          <div className="mb-1 flex items-baseline justify-between gap-2 text-[13px]">
-            <span className="inline-flex items-center gap-2 text-ink-2"><Swatch color={r.color} /> {r.label}</span>
-            <span className="tabular text-ink">
-              <span className="font-semibold">{moneyCompact(r.value)}</span>
-              <span className="ml-1.5 text-muted">{percent(total ? r.value / total : 0)}</span>
+        <li key={r.key} className="flex items-center gap-3 py-2.5" title={`${r.label}: ${money(r.value)} em ${r.count} pagamentos`}>
+          <IconBubble color={r.color} size="lg">{r.icon}</IconBubble>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-semibold leading-snug text-ink">{r.label}</span>
+            <span className="block text-[12px] text-muted">
+              {percent(total ? r.value / total : 0)} {noun} · {r.count} pag.
             </span>
-          </div>
-          <div className="h-2 rounded-full bg-surface-2">
-            <div className="h-2 rounded-full" style={{ width: `${(r.value / max) * 100}%`, background: r.color }} />
-          </div>
+          </span>
+          <span className="tabular shrink-0 text-[14px] font-bold text-ink">{money(r.value)}</span>
         </li>
       ))}
     </ul>
   );
 }
 
+export function BreakdownCard({ bySource, byMethod, label }: {
+  bySource: Array<{ key: SourceId; value: number; count: number }>;
+  byMethod: Array<{ key: PaymentMethod; value: number; count: number }>;
+  label: string;
+}) {
+  const [by, setBy] = useState<'source' | 'method'>('method');
+  const total = bySource.reduce((a, b) => a + b.value, 0);
+  const rows: Row[] =
+    by === 'source'
+      ? bySource.map((r) => ({ key: r.key, label: SOURCE_NAME[r.key], value: r.value, count: r.count, color: SOURCE_COLOR[r.key], icon: SOURCE_ICON[r.key] }))
+      : byMethod.map((r) => ({ key: r.key, label: METHOD_NAME[r.key], value: r.value, count: r.count, ...METHOD_STYLE[r.key] }));
+
+  return (
+    <Card
+      title="Composição"
+      subtitle={`Recebimentos · ${label}`}
+      action={<Segmented size="sm" ariaLabel="Agrupar por" value={by} onChange={setBy} options={[{ value: 'method', label: 'Forma' }, { value: 'source', label: 'Fonte' }]} />}
+    >
+      <div className="text-[30px] font-extrabold tracking-tight text-ink">{money(total)}</div>
+      <div className="mt-3">
+        <SegmentBar rows={rows} total={total} />
+      </div>
+      <div className="mt-3">
+        <CategoryList rows={rows} total={total} noun="dos recebimentos" />
+      </div>
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------- projeção detalhada
 export function ProjectionCard({ p }: { p: Projection }) {
   const parts = [
-    { key: 'issued', label: 'Cobranças já emitidas', hint: `${p.issuedCount} cobranças com vencimento no mês`, value: p.issued, color: 'var(--series-1)', kind: 'garantido' },
-    { key: 'recurring', label: 'Recorrência a gerar', hint: `${p.recurringCount} mensalidades de assinaturas ativas`, value: p.recurring, color: 'var(--series-3)', kind: 'garantido' },
-    { key: 'card', label: 'Cartão a creditar', hint: 'Vendas no cartão já aprovadas, crédito no mês', value: p.cardToCredit, color: 'var(--series-4)', kind: 'garantido' },
-    { key: 'est', label: 'Estimativa InfinitePay', hint: 'Média dos últimos 3 meses fechados', value: p.cardEstimate, color: 'var(--series-2)', kind: 'estimado' },
+    { key: 'issued', label: 'Cobranças já emitidas', hint: `${p.issuedCount} com vencimento no mês`, value: p.issued, color: 'var(--series-1)', icon: <CalendarCheck size={16} />, kind: 'garantido' },
+    { key: 'recurring', label: 'Recorrência a gerar', hint: `${p.recurringCount} mensalidades de assinaturas`, value: p.recurring, color: 'var(--series-4)', icon: <Repeat size={16} />, kind: 'garantido' },
+    { key: 'card', label: 'Cartão a creditar', hint: 'Vendas aprovadas, crédito no mês', value: p.cardToCredit, color: 'var(--series-3)', icon: <CreditCard size={16} />, kind: 'garantido' },
+    { key: 'est', label: 'Estimativa InfinitePay', hint: 'Média dos últimos 3 meses', value: p.cardEstimate, color: 'var(--series-2)', icon: <Sparkles size={16} />, kind: 'estimado' },
   ].filter((x) => x.value > 0);
 
   return (
-    <Card title={`Projeção para ${monthLabel(p.month)}`} subtitle="Quanto deve entrar no próximo mês">
-      <div className="tabular text-[30px] font-semibold tracking-tight text-ink">{money(p.total)}</div>
-      {/* barra empilhada com 2px de respiro entre os segmentos */}
-      <div className="mt-3 flex h-3 w-full gap-[2px] overflow-hidden rounded-full">
-        {parts.map((x) => (
-          <div key={x.key} title={`${x.label}: ${money(x.value)}`} style={{ width: `${(x.value / p.total) * 100}%`, background: x.color }} className="h-full first:rounded-l-full last:rounded-r-full" />
-        ))}
+    <Card title={`Projeção · ${monthLabel(p.month)}`} subtitle="Quanto deve entrar no próximo mês">
+      <div className="text-[30px] font-extrabold tracking-tight text-ink">{money(p.total)}</div>
+      <div className="mt-3">
+        <SegmentBar rows={parts} total={p.total} />
       </div>
-      <ul className="mt-4 flex flex-col gap-3">
+      <ul className="mt-3 flex flex-col">
         {parts.map((x) => (
-          <li key={x.key} className="flex items-start justify-between gap-3">
-            <span className="flex min-w-0 items-start gap-2">
-              <span className="mt-1"><Swatch color={x.color} /></span>
-              <span className="min-w-0">
-                <span className="block text-[13px] text-ink">{x.label}</span>
-                <span className="block text-[12px] text-muted">{x.hint}</span>
-              </span>
+          <li key={x.key} className="flex items-center gap-3 py-2.5">
+            <IconBubble color={x.color} size="lg">{x.icon}</IconBubble>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-semibold leading-snug text-ink">{x.label}</span>
+              <span className="block text-[12px] text-muted">{x.hint}</span>
             </span>
             <span className="shrink-0 text-right">
-              <span className="tabular block text-[13px] font-semibold text-ink">{money(x.value)}</span>
-              <span className="block text-[11px] text-muted">{x.kind}</span>
+              <span className="tabular block text-[14px] font-bold text-ink">{money(x.value)}</span>
+              <span className={clsx('block text-[11px] font-semibold', x.kind === 'garantido' ? 'text-good-ink' : 'text-muted')}>{x.kind}</span>
             </span>
           </li>
         ))}
@@ -127,10 +172,10 @@ export function LiveFeed({ items, fresh, live, demo }: { items: Transaction[]; f
 }
 
 // ---------------------------------------------------------------- a receber no mês
-export function ReceivablesCard({ items, month, today }: { items: Transaction[]; month: string; today: string }) {
+export function ReceivablesCard({ items, label, today }: { items: Transaction[]; label: string; today: string }) {
   const total = items.reduce((a, t) => a + t.amount, 0);
   return (
-    <Card title="Agenda de recebimentos" subtitle={`${items.length} em aberto em ${monthLabel(month)} · ${money(total)}`} bodyClassName="!px-0 !pb-2">
+    <Card title="Agenda de recebimentos" subtitle={`${items.length} em aberto · vencimento em ${label} · ${money(total)}`} bodyClassName="!px-0 !pb-2">
       {items.length === 0 ? (
         <p className="px-5 py-6 text-center text-[13px] text-muted">Nada em aberto neste mês.</p>
       ) : (

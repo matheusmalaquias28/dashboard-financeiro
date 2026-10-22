@@ -1,9 +1,10 @@
 import clsx from 'clsx';
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { fmtDate, METHOD_NAME, money, monthLabel, SOURCE_COLOR, SOURCE_NAME, STATUS_META } from '../lib/format';
-import { ymOf } from '../lib/metrics';
+import { fmtDate, METHOD_NAME, money, SOURCE_COLOR, SOURCE_NAME, STATUS_META } from '../lib/format';
+import { inPeriod, type Period } from '../lib/period';
 import type { Transaction, TxStatus } from '../types';
+import { Segmented, Select } from './controls';
 import { Card, StatusBadge, Swatch } from './ui';
 
 type Dir = 'all' | 'in' | 'out';
@@ -12,7 +13,7 @@ const PAGE = 12;
 
 const dateOf = (t: Transaction) => t.paidDate ?? t.dueDate ?? '';
 
-export function TransactionsTable({ txs, month }: { txs: Transaction[]; month: string }) {
+export function TransactionsTable({ txs, period, label }: { txs: Transaction[]; period: Period; label: string }) {
   const [q, setQ] = useState('');
   const [dir, setDir] = useState<Dir>('all');
   const [status, setStatus] = useState<TxStatus | 'all'>('all');
@@ -23,7 +24,7 @@ export function TransactionsTable({ txs, month }: { txs: Transaction[]; month: s
     const term = q.trim().toLowerCase();
     const list = txs.filter((t) => {
       const d = dateOf(t);
-      if (!d || ymOf(d) !== month) return false;
+      if (!inPeriod(d, period)) return false;
       if (dir !== 'all' && t.direction !== dir) return false;
       if (status !== 'all' && t.status !== status) return false;
       if (term && !`${t.customer ?? ''} ${t.description} ${SOURCE_NAME[t.source]}`.toLowerCase().includes(term)) return false;
@@ -34,9 +35,9 @@ export function TransactionsTable({ txs, month }: { txs: Transaction[]; month: s
       return sort.desc ? -c : c;
     });
     return list;
-  }, [txs, month, q, dir, status, sort]);
+  }, [txs, period, q, dir, status, sort]);
 
-  useEffect(() => setPage(0), [month, q, dir, status, sort]);
+  useEffect(() => setPage(0), [period, q, dir, status, sort]);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE));
   const view = rows.slice(page * PAGE, page * PAGE + PAGE);
   const totalIn = rows.filter((t) => t.direction === 'in').reduce((a, t) => a + t.amount, 0);
@@ -53,7 +54,7 @@ export function TransactionsTable({ txs, month }: { txs: Transaction[]; month: s
     const blob = new Blob(['﻿' + [head.join(';'), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `movimentacoes-${month}.csv`;
+    a.download = `movimentacoes-${period.from}-a-${period.to}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -68,7 +69,7 @@ export function TransactionsTable({ txs, month }: { txs: Transaction[]; month: s
   return (
     <Card
       title="Movimentações"
-      subtitle={`${monthLabel(month)} · ${rows.length} lançamentos · entradas ${money(totalIn)} · saídas ${money(totalOut)}`}
+      subtitle={`${label} · ${rows.length} lançamentos · entradas ${money(totalIn)} · saídas ${money(totalOut)}`}
       action={
         <button type="button" onClick={exportCsv} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-ink-2 hover:bg-surface-2">
           <Download size={15} /> <span className="hidden sm:inline">CSV</span>
@@ -76,31 +77,25 @@ export function TransactionsTable({ txs, month }: { txs: Transaction[]; month: s
       }
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <label className="relative min-w-[180px] flex-1">
-          <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+        <label className="relative min-w-[200px] flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Buscar cliente ou descrição"
-            className="h-9 w-full rounded-lg border border-line bg-surface pl-8 pr-3 text-[13px] text-ink outline-none placeholder:text-muted focus:border-[var(--accent)]"
+            className="h-10 w-full rounded-full border border-line bg-surface pl-10 pr-4 text-[13px] text-ink outline-none placeholder:text-muted focus:border-[var(--accent-text)]"
           />
         </label>
-        <div className="flex h-9 rounded-lg border border-line p-0.5 text-[13px]">
-          {(['all', 'in', 'out'] as const).map((d) => (
-            <button key={d} type="button" onClick={() => setDir(d)} className={clsx('rounded-md px-3', dir === d ? 'bg-surface-2 font-medium text-ink' : 'text-ink-2')}>
-              {{ all: 'Todas', in: 'Entradas', out: 'Saídas' }[d]}
-            </button>
-          ))}
-        </div>
-        <select
+        <Segmented ariaLabel="Tipo" value={dir} onChange={setDir} options={[{ value: 'all', label: 'Todas' }, { value: 'in', label: 'Entradas' }, { value: 'out', label: 'Saídas' }]} />
+        <Select<TxStatus | 'all'>
+          ariaLabel="Status"
           value={status}
-          onChange={(e) => setStatus(e.target.value as TxStatus | 'all')}
-          className="h-9 rounded-lg border border-line bg-surface px-2 text-[13px] text-ink-2"
-          aria-label="Status"
-        >
-          <option value="all">Todos os status</option>
-          {(Object.keys(STATUS_META) as TxStatus[]).map((s) => <option key={s} value={s}>{STATUS_META[s].label}</option>)}
-        </select>
+          onChange={setStatus}
+          className="w-[190px]"
+          buttonClassName="!rounded-full"
+          align="right"
+          options={[{ value: 'all', label: 'Todos os status' }, ...(Object.keys(STATUS_META) as TxStatus[]).map((s) => ({ value: s, label: STATUS_META[s].label }))]}
+        />
       </div>
 
       <div className="overflow-x-auto">

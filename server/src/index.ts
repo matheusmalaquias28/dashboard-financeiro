@@ -1,13 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { login, logout, requireAuth, session } from './auth.js';
+import { login, logout, requireAdmin, requireAuth, session } from './auth.js';
+import { agent } from './agent.js';
+import { checkout } from './checkout.js';
+import { collaboratorsApi, collaboratorsWebhook } from './collaborators.js';
+import { gmailApi, gmailCron } from './gmail/routes.js';
+import { syncAll } from './gmail/sync.js';
 import { config } from './config.js';
 import { connectors, dataWindow, invalidate, loadAll } from './connectors/index.js';
 import { salesSince, startDemoTicker, store } from './connectors/infinitepay.js';
 import { subscribe } from './events.js';
 import { webhooks } from './routes/webhooks.js';
-import { storeKind } from './store.js';
+import { checkStore, storeKind } from './store.js';
 import { ROOT_DIR, today } from './util.js';
 
 const app = express();
@@ -16,6 +21,7 @@ app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
 
 // Webhooks ficam fora do login (cada um valida seu próprio token)
+app.use('/webhooks/colaboradores', collaboratorsWebhook);
 app.use('/webhooks', webhooks);
 
 // Rotas públicas da API
@@ -26,8 +32,26 @@ app.get('/api/session', session);
 app.post('/api/login', login);
 app.post('/api/logout', logout);
 
+// Tarefa agendada do agente de e-mails (autenticada pelo CRON_SECRET, não pelo login)
+app.get('/api/gmail/cron', gmailCron);
+
 // Daqui para baixo, só com sessão válida
 app.use('/api', requireAuth);
+
+// Checkout: vendedores e administrador (cada vendedor só vê as próprias cobranças)
+app.use('/api/checkout', checkout);
+
+// Agente (OpenAI): todos os usuários logados; o contexto depende do papel
+app.use('/api/agent', agent);
+
+// Agente de e-mails (Gmail): só o administrador
+app.use('/api/gmail', requireAdmin, gmailApi);
+
+// Colaboradores (remuneração): só o administrador
+app.use('/api/colaboradores', requireAdmin, collaboratorsApi);
+
+// Painel financeiro: só o administrador
+app.use(['/api/dashboard', '/api/refresh', '/api/stream', '/api/live'], requireAdmin);
 
 app.get('/api/dashboard', async (_req, res) => {
   try {
@@ -79,8 +103,11 @@ if (!process.env.VERCEL) {
   app.listen(config.port, () => {
     console.log(`API em http://localhost:${config.port}`);
     console.log(`Fontes: ${connectors.map((c) => c.id).join(', ')} · modo demonstração: ${config.demoMode ? 'sim' : 'não'} · armazenamento: ${storeKind()}`);
-    if (!config.auth.password) console.warn('Atenção: DASHBOARD_PASSWORD vazio – o painel está sem senha.');
+    if (!config.supabase.anonKey) console.warn('Atenção: sem Supabase (SUPABASE_ANON_KEY) o painel abre sem login – só para desenvolvimento.');
     startDemoTicker();
+    void checkStore().then((problem) => problem && console.error('[banco] ' + problem));
+    // fora da Vercel, o próprio servidor confere o Gmail a cada 15 min
+    setInterval(() => void syncAll().catch((err) => console.error('[gmail] sincronização falhou', err)), 15 * 60_000);
   });
 }
 

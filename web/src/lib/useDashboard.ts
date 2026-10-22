@@ -8,10 +8,27 @@ const POLL_MS = 10_000;
 /** Erro de sessão expirada/ausente – o App volta para a tela de login */
 export class UnauthorizedError extends Error {}
 
+const OFFLINE = 'Sem conexão com o servidor do painel. Verifique sua internet ou se o servidor está no ar e tente de novo.';
+
+/** Mensagem legível para o usuário: troca o "Failed to fetch" do navegador por uma explicação */
+export function friendlyError(err: unknown): string {
+  if (err instanceof TypeError) return OFFLINE;
+  return (err as Error)?.message || 'Algo deu errado. Tente de novo.';
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin', ...init });
+  let res: Response;
+  try {
+    res = await fetch(path, { credentials: 'same-origin', ...init });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw err;
+    throw new Error(OFFLINE);
+  }
   if (res.status === 401) throw new UnauthorizedError('Sessão expirada');
-  if (!res.ok) throw new Error(`Erro ${res.status} ao carregar ${path}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `O servidor respondeu com erro ${res.status}. Tente de novo em instantes.`);
+  }
   return res.json() as Promise<T>;
 }
 

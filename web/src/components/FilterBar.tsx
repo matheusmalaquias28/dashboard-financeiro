@@ -1,9 +1,10 @@
 import clsx from 'clsx';
-import { Check, ChevronDown, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, RotateCcw, Wallet } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { METHOD_NAME, monthLabel, SOURCE_COLOR, SOURCE_NAME } from '../lib/format';
-import { ALL_METHODS, shiftMonth, ymOf } from '../lib/metrics';
+import { METHOD_NAME, SOURCE_COLOR, SOURCE_NAME } from '../lib/format';
+import { ALL_METHODS } from '../lib/metrics';
 import type { DashboardData, Filters, PaymentMethod, SourceId } from '../types';
+import { DateRangePicker } from './DateRangePicker';
 
 export function FilterBar({ data, filters, onChange, defaults }: {
   data: DashboardData;
@@ -11,11 +12,6 @@ export function FilterBar({ data, filters, onChange, defaults }: {
   onChange: (f: Filters) => void;
   defaults: Filters;
 }) {
-  const first = ymOf(data.window.from);
-  const last = ymOf(data.window.to);
-  const months: string[] = [];
-  for (let m = last; m >= first; m = shiftMonth(m, -1)) months.push(m);
-
   const activeSources = data.sources.filter((s) => s.state !== 'pending_access');
   const toggleSource = (id: SourceId) => {
     const has = filters.sources.includes(id);
@@ -23,44 +19,18 @@ export function FilterBar({ data, filters, onChange, defaults }: {
     onChange({ ...filters, sources: has ? filters.sources.filter((s) => s !== id) : [...filters.sources, id] });
   };
 
-  const isDefault = filters.month === defaults.month && filters.methods.length === 0 && filters.sources.length === defaults.sources.length;
+  const isDefault =
+    filters.period.from === defaults.period.from &&
+    filters.period.to === defaults.period.to &&
+    filters.methods.length === 0 &&
+    filters.sources.length === defaults.sources.length;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* período */}
-      <div className="flex h-9 items-center rounded-lg border border-line bg-surface">
-        <button
-          type="button"
-          className="grid h-full w-9 place-items-center text-ink-2 hover:bg-surface-2 disabled:opacity-30"
-          onClick={() => onChange({ ...filters, month: shiftMonth(filters.month, -1) })}
-          disabled={filters.month <= first}
-          aria-label="Mês anterior"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <select
-          value={filters.month}
-          onChange={(e) => onChange({ ...filters, month: e.target.value })}
-          className="h-full min-w-[150px] cursor-pointer appearance-none bg-transparent px-2 text-center text-[13px] font-medium text-ink outline-none"
-          aria-label="Mês de referência"
-        >
-          {months.map((m) => (
-            <option key={m} value={m}>
-              {monthLabel(m)}
-              {m === ymOf(data.today) ? ' (atual)' : ''}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="grid h-full w-9 place-items-center text-ink-2 hover:bg-surface-2 disabled:opacity-30"
-          onClick={() => onChange({ ...filters, month: shiftMonth(filters.month, 1) })}
-          disabled={filters.month >= last}
-          aria-label="Próximo mês"
-        >
-          <ChevronRight size={16} />
-        </button>
-      </div>
+      <DateRangePicker value={filters.period} onChange={(period) => onChange({ ...filters, period })} today={data.today} min={data.window.from} max={data.window.to} />
+
+      <span aria-hidden className="mx-1 hidden h-6 w-px bg-[var(--border-strong)] sm:block" />
 
       {/* fontes */}
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Fontes">
@@ -73,11 +43,13 @@ export function FilterBar({ data, filters, onChange, defaults }: {
               onClick={() => toggleSource(s.id)}
               aria-pressed={on}
               className={clsx(
-                'inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-[13px] transition-colors',
-                on ? 'border-line bg-surface text-ink' : 'border-dashed border-line bg-transparent text-muted',
+                'inline-flex h-10 items-center gap-2 rounded-full border pl-2 pr-4 text-[13px] font-semibold transition-colors',
+                on ? 'border-line-strong bg-surface-2 text-ink' : 'border-dashed border-line bg-transparent text-muted hover:text-ink-2',
               )}
             >
-              <span className="size-2.5 rounded-[3px]" style={{ background: on ? SOURCE_COLOR[s.id] : 'var(--axis)' }} />
+              <span className="grid size-6 place-items-center rounded-full" style={{ background: on ? SOURCE_COLOR[s.id] : 'var(--surface-3)' }}>
+                {on && <Check size={13} strokeWidth={3.5} className="text-white" />}
+              </span>
               {SOURCE_NAME[s.id]}
             </button>
           );
@@ -90,7 +62,7 @@ export function FilterBar({ data, filters, onChange, defaults }: {
         <button
           type="button"
           onClick={() => onChange(defaults)}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-ink-2 hover:bg-surface-2"
+          className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-muted hover:text-ink"
         >
           <RotateCcw size={14} /> Limpar
         </button>
@@ -99,6 +71,7 @@ export function FilterBar({ data, filters, onChange, defaults }: {
   );
 }
 
+/** Seleção múltipla das formas de pagamento */
 function MethodSelect({ value, onChange }: { value: PaymentMethod[]; onChange: (v: PaymentMethod[]) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -116,37 +89,38 @@ function MethodSelect({ value, onChange }: { value: PaymentMethod[]; onChange: (
   const label = value.length === 0 ? 'Todas as formas' : value.length === 1 ? METHOD_NAME[value[0]] : `${value.length} formas`;
   const toggle = (m: PaymentMethod) => onChange(value.includes(m) ? value.filter((x) => x !== m) : [...value, m]);
 
+  const Box = ({ on }: { on: boolean }) => (
+    <span className={clsx('grid size-[18px] place-items-center rounded-md border', on ? 'border-transparent bg-accent text-on-accent' : 'border-line-strong')}>
+      {on && <Check size={12} strokeWidth={3.5} />}
+    </span>
+  );
+
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className={clsx('inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface px-3 text-[13px]', value.length ? 'text-ink' : 'text-ink-2')}
+        aria-haspopup="listbox"
+        className={clsx(
+          'inline-flex h-10 items-center gap-2 rounded-full border bg-surface px-4 text-[13px] transition-colors',
+          open ? 'border-[var(--accent-text)]' : 'border-line hover:border-line-strong',
+        )}
       >
-        Pagamento: <span className="font-medium text-ink">{label}</span>
-        <ChevronDown size={14} />
+        <Wallet size={15} className="text-muted" />
+        <span className="font-semibold text-ink">{label}</span>
+        {value.length > 0 && <span className="rounded-full bg-accent px-1.5 text-[11px] font-bold text-on-accent">{value.length}</span>}
+        <ChevronDown size={15} className={clsx('text-muted transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute left-0 z-30 mt-1 w-56 rounded-xl border border-line bg-surface p-1 shadow-lg">
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-surface-2"
-          >
-            <span className="grid w-4 place-items-center">{value.length === 0 && <Check size={16} strokeWidth={3} />}</span>
-            Todas as formas
+        <div role="listbox" aria-multiselectable="true" aria-label="Formas de pagamento" className="pop-in absolute left-0 z-40 mt-1.5 w-60 rounded-2xl border border-line-strong bg-surface-2 p-1.5 shadow-2xl shadow-black/40">
+          <button type="button" role="option" aria-selected={value.length === 0} onClick={() => onChange([])} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] font-semibold text-ink hover:bg-surface-3">
+            <Box on={value.length === 0} /> Todas as formas
           </button>
-          <div className="my-1 h-px bg-[var(--grid)]" />
+          <div className="mx-2 my-1 h-px bg-[var(--border)]" />
           {ALL_METHODS.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => toggle(m)}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-surface-2"
-            >
-              <span className="grid w-4 place-items-center">{value.includes(m) && <Check size={16} strokeWidth={3} />}</span>
-              {METHOD_NAME[m]}
+            <button key={m} type="button" role="option" aria-selected={value.includes(m)} onClick={() => toggle(m)} className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] text-ink-2 hover:bg-surface-3 hover:text-ink">
+              <Box on={value.includes(m)} /> {METHOD_NAME[m]}
             </button>
           ))}
         </div>

@@ -66,11 +66,23 @@ export async function fetchJson<T>(url: string, init: RequestInit & { timeoutMs?
 /** Cache em memória com TTL e deduplicação de chamadas concorrentes */
 export class TtlCache<T> {
   private entries = new Map<string, { at: number; value: Promise<T> }>();
+  private refreshing = new Set<string>();
   constructor(private ttlMs: number) {}
 
   get(key: string, load: () => Promise<T>): Promise<T> {
     const hit = this.entries.get(key);
     if (hit && Date.now() - hit.at < this.ttlMs) return hit.value;
+    if (hit) {
+      // vencido: devolve o valor anterior na hora e atualiza por trás (APIs lentas não travam o painel)
+      if (!this.refreshing.has(key)) {
+        this.refreshing.add(key);
+        load()
+          .then((v) => this.entries.set(key, { at: Date.now(), value: Promise.resolve(v) }))
+          .catch((err) => console.warn('[cache] falha ao atualizar', key, err))
+          .finally(() => this.refreshing.delete(key));
+      }
+      return hit.value;
+    }
     const value = load();
     this.entries.set(key, { at: Date.now(), value });
     value.catch(() => this.entries.delete(key));
